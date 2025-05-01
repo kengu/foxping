@@ -1,0 +1,7 @@
+.idea/
+*.iml
+
+logs/
+*learned_codes.json
+*unknown_codes.json
+*suspicious_codes.json

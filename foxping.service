@@ -1,0 +1,13 @@
+[Unit]
+Description=FoxPing Bait Alert Service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/foxping/foxping.py
+WorkingDirectory=/home/pi/foxping
+Restart=on-failure
+User=pi
+
+[Install]
+WantedBy=multi-user.target
+
