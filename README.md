@@ -33,11 +33,13 @@ options:
   -F, --format {log,json,csv}
                         Input format to parse (default: log)
   -s, --sound           Enable sound playback (off by default)
-  -A, --analyze         Print full code analysis and exit
+  -A, --analyze {K,L,S,U,E}
+                        Print code analysis and exit (default is K for known codes)
   -L, --log-level {FINE,INFO,LOG,ERROR}
                         Set minimum log level (default: INFO)
 
 Use -F log for console output or -F json for structured logging.
+
 ```
 
 This will run FoxPing with known channels 13, 14 and 15 with format `JSON`

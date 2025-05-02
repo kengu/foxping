@@ -37,6 +37,31 @@ def load_known_ids():
 
 known_ids = {}
 
+# File with detection history
+DETECTIONS_FILE = "detections.json"
+
+def load_detections():
+    if os.path.exists(DETECTIONS_FILE):
+        try:
+            with open(DETECTIONS_FILE) as f:
+                return json.load(f)
+        except BrokenPipeError as e:
+            tb = StringIO()
+            traceback.print_exc(file=tb)
+            panic(f"Failed to load {DETECTIONS_FILE}", error=str(e), trace=tb.getvalue())
+        except Exception as e:
+            warn(f"Failed to load {DETECTIONS_FILE}", error=str(e))
+    return {}
+
+def save_detections():
+    try:
+        with open(DETECTIONS_FILE, "w") as f:
+            json.dump(detections, f, indent=2)
+    except Exception:
+        pass
+
+detections = {}
+
 # Suspicious codes
 SUSPICIOUS_CODES_FILE = "suspicious_codes.json"
 
@@ -322,6 +347,19 @@ def process_input_line(line, last_input_time):
             if count <=1 or (ts - last_output_time[clean_code] >= timedelta(seconds=3)):
                 line = f"[{msg_time}]  Channel: {channel}  Code: {clean_code}  Count: {count}"
                 log(line, msg_time=msg_time, channel=channel, code=clean_code, count=count)
+                if clean_code in detections:
+                    det = detections[clean_code]
+                    det["count"] = det.get("count", 0) + count
+                    det["last_seen"] = msg_time
+                    detections[clean_code] = det
+                else:
+                    detections[clean_code] = {
+                        "code": clean_code,
+                        "count": count,
+                        "channel": channel,
+                        "first_seen": msg_time,
+                    }
+                save_detections()
                 last_output_time[clean_code] = ts
 
             play_sound_if_enabled(channel)
@@ -477,70 +515,102 @@ def show_estimated_ids():
         print(f"{code:07x} → CH{i:02d}?")
     print()
 
+ANALYSIS_TYPES = ["A","K","L","S","U","E"]
+
 def show_analysis():
-    print("=== Known IDs ===")
-    for code, channel in known_ids.items():
-        print(f"{code} → {channel}")
-    print()
+    all = analyze == "A"
+    if all or analyze == "K":
+        print("=== Known IDs ===")
+        print(f"{'Code':<10} {'Channel':<8} {'Count':<6} {'First seen':<36} {'Last seen':<36}")
+        print("-" * (10+8+6+2*36+4))
+        for code, channel in known_ids.items():
+            stats = detections.get(code, {})
+            count = stats.get("count", 0)
+            first_seen = stats.get("first_seen")
+            if first_seen:
+                try:
+                    dt = datetime.fromisoformat(first_seen)
+                    ago = human_time_since((datetime.now() - dt).total_seconds())
+                    first_seen_str = f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({ago} ago)"
+                except Exception:
+                    first_seen_str = first_seen
+            else:
+                first_seen_str = "never"
+            last_seen = stats.get("last_seen")
+            if last_seen:
+                try:
+                    dt = datetime.fromisoformat(last_seen)
+                    ago = human_time_since((datetime.now() - dt).total_seconds())
+                    last_seen_str = f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({ago} ago)"
+                except Exception:
+                    last_seen_str = last_seen
+            else:
+                last_seen_str = "never"
+            print(f"{code:<10} {channel:<8} {count:<6} {first_seen_str:<36} {last_seen_str:<36}")
+        print()
 
-    print("=== Learned Codes ===")
-    for code, entry in learned_codes.items():
-        count = entry.get("count", "?")
-        first_seen = entry.get("first_seen", "?")
-        estimated = entry.get("estimated_channel", "?")
-        channel = entry.get("channel", "?")
-        print(f"{code} (estimated={estimated}, count={count}, first_seen={first_seen})")
-    print()
+    if all or analyze == "L":
+        print("=== Learned Codes ===")
+        for code, entry in learned_codes.items():
+            count = entry.get("count", "?")
+            first_seen = entry.get("first_seen", "?")
+            estimated = entry.get("estimated_channel", "?")
+            channel = entry.get("channel", "?")
+            print(f"{code} (estimated={estimated}, count={count}, first_seen={first_seen})")
+        print()
 
-    print("=== Suspicious Codes Grouped by Known Code ===")
-    for known_code, entry in suspicious_codes.items():
-        channel = known_ids.get(known_code, "?")
-        print(f"{known_code} ({channel}):")
+    if all or analyze == "S":
+        print("=== Suspicious Codes Grouped by Known Code ===")
+        for known_code, entry in suspicious_codes.items():
+            channel = known_ids.get(known_code, "?")
+            print(f"{known_code} ({channel}):")
 
-        for suspect_code, info in entry.get("suspicious", {}).items():
-            count = info.get("count", 0)
-            distance = info.get("hamming_distance", "?")
-            first_seen = info.get("first_seen", "?")
+            for suspect_code, info in entry.get("suspicious", {}).items():
+                count = info.get("count", 0)
+                distance = info.get("hamming_distance", "?")
+                first_seen = info.get("first_seen", "?")
 
-            print(f"  ↳ {suspect_code} (count={count}, distance={distance}, first_seen={first_seen})")
+                print(f"  ↳ {suspect_code} (count={count}, distance={distance}, first_seen={first_seen})")
 
-            corr = info.get("correlated_time")
+                corr = info.get("correlated_time")
+                if corr:
+                    print(f"     ↳ correlated at Δ={corr.get('delta_seconds', '?')}s (t={corr.get('timestamp', '?')})")
+        print()
+
+    if all or analyze == "U":
+        print("=== Unknown Codes ===")
+        for code, entry in unknown_codes.items():
+            count = entry.get("count", "?")
+            first_seen = entry.get("first_seen", "?")
+            estimated = entry.get("estimated_channel", "?")
+
+            print(f"{code} (count={count}, first_seen={first_seen}, estimated={estimated})")
+
+            corr = entry.get("correlated_with")
             if corr:
-                print(f"     ↳ correlated at Δ={corr.get('delta_seconds', '?')}s (t={corr.get('timestamp', '?')})")
-    print()
+                print(f"  ↳ correlated with {corr.get('code', '?')} ({corr.get('channel', '?')}, Δ={corr.get('delta_seconds', '?')}s) (t={corr.get('timestamp', '?')})")
+        print()
 
-    print("=== Unknown Codes ===")
-    for code, entry in unknown_codes.items():
-        count = entry.get("count", "?")
-        first_seen = entry.get("first_seen", "?")
-        estimated = entry.get("estimated_channel", "?")
+    if all or analyze == "E":
+        print("=== Estimated IDs (based on fixed offsets) ===")
+        print()
+        print(f"{'Channel':<8} {'Estimate':<10} {'Known':<10} {'Hamming':<10}")
+        print("-" * (8+10+10+10))
+        for i in range(1, 17):
+            diff = (i - 1) << 20
+            code_int = KNOWN_ID ^ diff
+            code_hex = f"{code_int:07x}"
+            expected_channel = f"CH{i:02d}"
+            known_code = next((k for k, v in known_ids.items() if v == expected_channel), "-")
 
-        print(f"{code} (count={count}, first_seen={first_seen}, estimated={estimated})")
+            # Calculate Hamming distance between estimated code and KNOWN_ID
+            if known_code != "-":
+                hamming = bin(KNOWN_ID ^ code_int).count("1")
+            else:
+                hamming = "-"
 
-        corr = entry.get("correlated_with")
-        if corr:
-            print(f"  ↳ correlated with {corr.get('code', '?')} ({corr.get('channel', '?')}, Δ={corr.get('delta_seconds', '?')}s) (t={corr.get('timestamp', '?')})")
-    print()
-
-    print("=== Estimated IDs (based on fixed offsets) ===")
-    print()
-    print(f"{'Channel':<10}\t{'Estimate':<7}\t{'Known':<6}  \t{'Hamming':<10}")
-    print("-" * 55)
-    for i in range(1, 17):
-        diff = (i - 1) << 20
-        code_int = KNOWN_ID ^ diff
-        code_hex = f"{code_int:07x}"
-        expected_channel = f"CH{i:02d}"
-        known_code = next((k for k, v in known_ids.items() if v == expected_channel), "-")
-
-        # Calculate Hamming distance between estimated code and KNOWN_ID
-        if known_code != "-":
-            hamming = bin(KNOWN_ID ^ code_int).count("1")
-        else:
-            hamming = "-"
-
-        print(f"{expected_channel:<8}\t{code_hex:<10}\t{known_code:<10}\t{hamming:<4}")
-    print()
+            print(f"{expected_channel:<8} {code_hex:<10} {known_code:<10} {hamming:<10}")
+        print()
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -549,26 +619,28 @@ def parse_args():
     )
     parser.add_argument("-F", "--format", choices=log_formats, default="log", help="Input format to parse (default: log)")
     parser.add_argument("-s", "--sound", action="store_true", help="Enable sound playback (off by default)")
-    parser.add_argument("-A", "--analyze", action="store_true", help="Print full code analysis and exit")
+    parser.add_argument("-A", "--analyze", choices=ANALYSIS_TYPES, default="", help="Print code analysis and exit (default is K for known codes)")
     parser.add_argument("-L", "--log-level", choices=LOG_LEVELS, default="INFO", help="Set minimum log level (default: INFO)")
     parser.add_argument("files", nargs="*", help="Optional input file(s). If omitted, reads from stdin.")
 
     return parser.parse_args()
 
 def main():
-    global log_format, log_level, log_file, known_ids, learned_codes, suspicious_codes, unknown_codes, last_known_ids_mtime, play_sound_enabled
+    global log_format, log_level, log_file, analyze, known_ids, detections, learned_codes, suspicious_codes, unknown_codes, last_known_ids_mtime, play_sound_enabled
 
     open_log()
 
     args = parse_args()
+    analyze = args.analyze
     log_level = args.log_level
     known_ids = load_known_ids()
+    detections = load_detections()
     learned_codes = load_learned()
     suspicious_codes = load_suspicious()
     unknown_codes = load_unknown()
     last_input_time = time.time()
 
-    if args.analyze:
+    if analyze:
         show_analysis()
         return
 
@@ -628,6 +700,7 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         info("Stopped by user (Ctrl+C). Exiting cleanly.")
+        save_detections()
         save_learned()
         save_unknown()
         save_suspicious()
