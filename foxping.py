@@ -192,14 +192,19 @@ def is_too_close_to_known_id(code_int, clean_code, msg_time):
             return True
     return False
 
-# Estimate channel id based on XOR distance
 def estimate_channel_id(diff, learned):
-    observed = sorted(set([
-        int(k, 16) ^ KNOWN_ID for k in learned.keys()
-        if (int(k, 16) ^ KNOWN_ID) != 0
-    ] + [diff]))
-    index = observed.index(diff)
-    return f"CH{1 + index:02d}?"
+    """
+    Estimate the channel ID based on the XOR difference (`diff`) from KNOWN_ID.
+
+    This uses fixed offsets corresponding to CH01–CH16:
+    CH01 → diff = (0 << 20), CH02 → (1 << 20), ..., CH16 → (15 << 20)
+
+    The function finds the closest matching offset and returns an estimated channel like "CH13?".
+    """
+    channel_diffs = [(i, (i - 1) << 20) for i in range(1, 17)]
+    closest = min(channel_diffs, key=lambda x: abs(x[1] - diff))
+    return f"CH{closest[0]:02d}?"
+
 
 # Message count and output throttling
 message_count = defaultdict(lambda: -1)
@@ -235,11 +240,7 @@ def process_input_line(line, last_input_time):
                 channel = known_ids[clean_code]
             elif clean_code in learned_codes:
                 channel = learned_codes[clean_code]
-            elif (code_int & KNOWN_MASK) == (KNOWN_ID & KNOWN_MASK):
-                diff = code_int ^ KNOWN_ID
-                channel = estimate_channel_id(diff, learned_codes)
-
-            else:
+            elif (code_int & KNOWN_MASK) != (KNOWN_ID & KNOWN_MASK):
                 diff = code_int ^ KNOWN_ID
                 estimated_channel = estimate_channel_id(diff, learned_codes)
 
@@ -258,18 +259,28 @@ def process_input_line(line, last_input_time):
                 info(f"Unknown code [{clean_code}] counted [{unknown_entry['count']}] times")
                 return last_input_time
 
-            message_count[clean_code] += 1
+            else:
+                diff = code_int ^ KNOWN_ID
+                channel = estimate_channel_id(diff, learned_codes)
+
+            message_count[clean_code] = message_count.get(clean_code, 0) + 1
             count = message_count[clean_code]
 
             if channel.endswith("?") and count >= LEARN_THRESHOLD:
                 learned_channel = channel.rstrip("?")
-                learned_codes[clean_code] = learned_channel
+                learned_codes[clean_code] = {
+                    "code": clean_code,
+                    "count": count,
+                    "first_seen": msg_time,
+                    "estimated_channel": channel,
+                    "channel": learned_channel
+                }
                 save_learned()
-                info(f"Clean code [{clean_code}] counted [{count}] times")
+                info(f"Learned code [{clean_code}] as {learned_channel} (count={count})")
                 channel = learned_channel
 
             now = datetime.now()
-            if now - last_output_time[clean_code] >= timedelta(seconds=3):
+            if count <=1 or (now - last_output_time[clean_code] >= timedelta(seconds=3)):
                 line = f"[{msg_time}]  Channel: {channel}  Code: {clean_code}  Count: {count}"
                 log(line, msg_time=msg_time, channel=channel, code=clean_code, count=count)
                 last_output_time[clean_code] = now
@@ -398,7 +409,7 @@ def parse_args():
     )
     parser.add_argument("-F", "--format", choices=log_formats, default="log", help="Input format to parse (default: log)")
     parser.add_argument("-s", "--sound", action="store_true", help="Enable sound playback (off by default)")
-    parser.add_argument("--show", action="store_true", help="Print known, suspicious and unknown codes and exit")
+    parser.add_argument("-A", "--analyze", action="store_true", help="Print full code analysis and exit")
     parser.add_argument("files", nargs="*", help="Optional input file(s). If omitted, reads from stdin.")
 
     return parser.parse_args()
@@ -415,8 +426,8 @@ def main():
     last_input_time = time.time()
 
     args = parse_args()
-    if args.show:
-        show_summary()
+    if args.analyze:
+        show_analysis()
         return
 
     play_sound_enabled = args.sound
@@ -455,25 +466,62 @@ def main():
             for line in sys.stdin:
                 last_input_time = process_input_line(line, last_input_time)
 
+def show_estimated_ids():
+    print("=== Estimated IDs (based on fixed offsets) ===")
+    for i in range(1, 17):
+        diff = (i - 8) << 20
+        code = KNOWN_ID ^ diff
+        print(f"{code:07x} → CH{i:02d}?")
+    print()
 
-def show_summary():
+def show_analysis():
     print("=== Known IDs ===")
     for code, channel in known_ids.items():
         print(f"{code} → {channel}")
     print()
 
+    print("=== Learned Codes ===")
+    for code, entry in learned_codes.items():
+        count = entry.get("count", "?")
+        first_seen = entry.get("first_seen", "?")
+        estimated = entry.get("estimated_channel", "?")
+        channel = entry.get("channel", "?")
+        print(f"{code} (estimated={estimated}, count={count}, first_seen={first_seen})")
+    print()
+
     print("=== Suspicious Codes Grouped by Known Code ===")
     for known_code, entry in suspicious_codes.items():
-        print(f"{known_code}:")
+        channel = known_ids.get(known_code, "?")
+        print(f"{channel} ({known_code})")
         for suspect_code, info in entry.get("suspicious", {}).items():
-            print(f"  ↳ {suspect_code} (count={info.get('count', 0)}, distance={info.get('hamming_distance', '?')}, first_seen={info.get('first_seen', '?')})")
+            print(f"  ↳ similar to {suspect_code} (count={info.get('count', 0)}, distance={info.get('hamming_distance', '?')}, first_seen={info.get('first_seen', '?')})")
     print()
 
     print("=== Unknown Codes ===")
     for code, entry in unknown_codes.items():
-        print(f"{code} (count={entry.get('count', 0)}, first_seen={entry.get('first_seen', '?')})")
+        est = entry.get("estimated_channel", "?")
+        print(f"{code} (estimated={est}, count={entry.get('count', 0)}, first_seen={entry.get('first_seen', '?')})")
     print()
 
+    print("=== Estimated IDs (based on fixed offsets) ===")
+    print()
+    print(f"{'Channel':<10}\t{'Estimate':<7}\t{'Known':<6}  \t{'Hamming':<10}")
+    print("-" * 55)
+    for i in range(1, 17):
+        diff = (i - 1) << 20
+        code_int = KNOWN_ID ^ diff
+        code_hex = f"{code_int:07x}"
+        expected_channel = f"CH{i:02d}"
+        known_code = next((k for k, v in known_ids.items() if v == expected_channel), "-")
+
+        # Calculate Hamming distance between estimated code and KNOWN_ID
+        if known_code != "-":
+            hamming = bin(KNOWN_ID ^ code_int).count("1")
+        else:
+            hamming = "-"
+
+        print(f"{expected_channel:<8}\t{code_hex:<10}\t{known_code:<10}\t{hamming:<4}")
+    print()
 
 if __name__ == "__main__":
     try:

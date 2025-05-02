@@ -48,6 +48,50 @@ The output is
 {"msg_time": "2025-05-01 22:15:00", "channel": "CH15", "code": "fbafaa8", "count": 0}
 ```
 
+You can analyze current state with
+```bash
+python3 foxping.py --analyze 
+```
+
+This will show something similar to this after running some time
+```bash
+=== Known IDs ===
+bfafaa8 → CH13
+efafaa8 → CH14
+fbafaa8 → CH15
+
+=== Learned Codes ===
+05afaa8 (estimated=CH03?, count=3, first_seen=2025-05-01 22:15:00)
+
+=== Suspicious Codes Grouped by Known Code ===
+CH14 (efafaa8)
+  ↳ similar to cfafaa8 (count=36, distance=1, first_seen=2025-05-01 22:15:00)
+
+=== Unknown Codes ===
+cfafaa9 (estimated=CH16?, count=12, first_seen=2025-05-01 22:15:00)
+
+=== Estimated IDs (based on fixed offsets) ===
+
+Channel         Estimate        Known           Hamming   
+-------------------------------------------------------
+CH01            07afaa8         -               -   
+CH02            06afaa8         -               -   
+CH03            05afaa8         -               -   
+CH04            04afaa8         -               -   
+CH05            03afaa8         -               -   
+CH06            02afaa8         -               -   
+CH07            01afaa8         -               -   
+CH08            00afaa8         -               -   
+CH09            0fafaa8         -               -   
+CH10            0eafaa8         -               -   
+CH11            0dafaa8         -               -   
+CH12            0cafaa8         -               -   
+CH13            0bafaa8         bfafaa8         2   
+CH14            0aafaa8         efafaa8         3   
+CH15            09afaa8         fbafaa8         3   
+CH16            08afaa8         -               -
+```
+
 ## ⚙️ Setup
 
 Install `rtl_433` and connect a compatible RTL-SDR USB receiver.
