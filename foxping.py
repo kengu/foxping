@@ -10,7 +10,7 @@ import subprocess
 import traceback
 from io import StringIO
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 EXPECTED_BIT_LENGTH = 25
 EXPECTED_HEX_LENGTH = (EXPECTED_BIT_LENGTH + 3) // 4  # 7 hex characters
@@ -185,6 +185,17 @@ def is_too_close_to_known_id(code_int, clean_code, msg_time):
             })
 
             sub["count"] += 1
+            try:
+                ts = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S")
+                delta = abs(ts - last_output_time.get(known_code, datetime.min))
+                if delta <= timedelta(seconds=3):
+                    sub["correlated_time"] = {
+                        "delta_seconds": round(delta.total_seconds(), 2),
+                        "timestamp": ts.isoformat()
+                    }
+            except Exception:
+                pass
+
             entry["suspicious"][clean_code] = sub
             suspicious_codes[known_code] = entry
             save_suspicious()
@@ -232,6 +243,7 @@ def process_input_line(line, last_input_time):
                 return last_input_time
 
             msg_time = data.get("time", "unknown")
+
             if is_too_close_to_known_id(code_int, clean_code, msg_time):
                 return last_input_time
 
@@ -239,7 +251,7 @@ def process_input_line(line, last_input_time):
             if clean_code in known_ids:
                 channel = known_ids[clean_code]
             elif clean_code in learned_codes:
-                channel = learned_codes[clean_code]
+                channel = learned_codes[clean_code].get("code")
             elif (code_int & KNOWN_MASK) != (KNOWN_ID & KNOWN_MASK):
                 diff = code_int ^ KNOWN_ID
                 estimated_channel = estimate_channel_id(diff, learned_codes)
@@ -253,6 +265,31 @@ def process_input_line(line, last_input_time):
                 unknown_entry["count"] += 1
                 if estimated_channel:
                     unknown_entry["estimated_channel"] = estimated_channel
+
+                # Check if this code came close to a known code in time
+                try:
+                    closest_known = None
+                    closest_delta = None
+                    threshold = timedelta(seconds=1)
+
+                    ts = datetime.strptime(msg_time,"%Y-%m-%d %H:%M:%S")
+                    for known_code, last_seen in last_output_time.items():
+                        if known_code in known_ids:
+                            delta = abs(ts - last_seen)
+                            if delta <= threshold:
+                                if closest_delta is None or delta < closest_delta:
+                                    closest_known = known_code
+                                    closest_delta = delta
+
+                    if closest_known:
+                        unknown_entry["correlated_with"] = {
+                            "code": closest_known,
+                            "channel": known_ids[closest_known],
+                            "delta_seconds": round(closest_delta.total_seconds(), 2),
+                            "timestamp": ts.isoformat()
+                        }
+                except Exception:
+                    pass
 
                 unknown_codes[clean_code] = unknown_entry
                 save_unknown()
@@ -279,11 +316,11 @@ def process_input_line(line, last_input_time):
                 info(f"Learned code [{clean_code}] as {learned_channel} (count={count})")
                 channel = learned_channel
 
-            now = datetime.now()
-            if count <=1 or (now - last_output_time[clean_code] >= timedelta(seconds=3)):
+            ts = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S")
+            if count <=1 or (ts - last_output_time[clean_code] >= timedelta(seconds=3)):
                 line = f"[{msg_time}]  Channel: {channel}  Code: {clean_code}  Count: {count}"
                 log(line, msg_time=msg_time, channel=channel, code=clean_code, count=count)
-                last_output_time[clean_code] = now
+                last_output_time[clean_code] = ts
 
             play_sound_if_enabled(channel)
 
@@ -492,15 +529,31 @@ def show_analysis():
     print("=== Suspicious Codes Grouped by Known Code ===")
     for known_code, entry in suspicious_codes.items():
         channel = known_ids.get(known_code, "?")
-        print(f"{channel} ({known_code})")
+        print(f"{known_code} ({channel}):")
+
         for suspect_code, info in entry.get("suspicious", {}).items():
-            print(f"  ↳ similar to {suspect_code} (count={info.get('count', 0)}, distance={info.get('hamming_distance', '?')}, first_seen={info.get('first_seen', '?')})")
+            count = info.get("count", 0)
+            distance = info.get("hamming_distance", "?")
+            first_seen = info.get("first_seen", "?")
+
+            print(f"  ↳ {suspect_code} (count={count}, distance={distance}, first_seen={first_seen})")
+
+            corr = info.get("correlated_time")
+            if corr:
+                print(f"     ↳ correlated at Δ={corr.get('delta_seconds', '?')}s (t={corr.get('timestamp', '?')})")
     print()
 
     print("=== Unknown Codes ===")
     for code, entry in unknown_codes.items():
-        est = entry.get("estimated_channel", "?")
-        print(f"{code} (estimated={est}, count={entry.get('count', 0)}, first_seen={entry.get('first_seen', '?')})")
+        count = entry.get("count", "?")
+        first_seen = entry.get("first_seen", "?")
+        estimated = entry.get("estimated_channel", "?")
+
+        print(f"{code} (count={count}, first_seen={first_seen}, estimated={estimated})")
+
+        corr = entry.get("correlated_with")
+        if corr:
+            print(f"  ↳ correlated with {corr.get('code', '?')} ({corr.get('channel', '?')}, Δ={corr.get('delta_seconds', '?')}s) (t={corr.get('timestamp', '?')})")
     print()
 
     print("=== Estimated IDs (based on fixed offsets) ===")

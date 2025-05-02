@@ -64,11 +64,13 @@ fbafaa8 → CH15
 05afaa8 (estimated=CH03?, count=3, first_seen=2025-05-01 22:15:00)
 
 === Suspicious Codes Grouped by Known Code ===
-CH14 (efafaa8)
-  ↳ similar to cfafaa8 (count=36, distance=1, first_seen=2025-05-01 22:15:00)
+efafaa8 (CH14):
+  ↳ cfafaa8 (count=3, distance=1, first_seen=2025-05-01 22:15:01)
+     ↳ correlated at Δ=1.0s (t=2025-05-01T22:15:01)
 
 === Unknown Codes ===
-cfafaa9 (estimated=CH16?, count=12, first_seen=2025-05-01 22:15:00)
+cfafaa9 (count=1, first_seen=2025-05-01 22:15:01, estimated=CH16?)
+  ↳ correlated with bfafaa8 (CH13, Δ=1.0s) (t=2025-05-01T22:15:01)
 
 === Estimated IDs (based on fixed offsets) ===
 
@@ -89,7 +91,7 @@ CH12            0cafaa8         -               -
 CH13            0bafaa8         bfafaa8         2   
 CH14            0aafaa8         efafaa8         3   
 CH15            09afaa8         fbafaa8         3   
-CH16            08afaa8         -               -
+CH16            08afaa8         -               -   
 ```
 
 ## ⚙️ Setup
