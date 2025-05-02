@@ -21,9 +21,9 @@ You can find the actual codes decoded using `433_rtl` in the [test](test/) folde
 ## Usage
 ```bash
 python3 foxping.py -h
-usage: foxping.py [-h] [-F {log,json,csv}] [-s] [files ...]
+usage: foxping.py [-h] [-F {log,json,csv}] [-s] [-A] [-L {FINE,INFO,LOG,ERROR}] [files ...]
 
-FoxPing - 433 MHz Bait Alert System
+FoxPing - 433_rtl based Bait Alert Tracking Service
 
 positional arguments:
   files                 Optional input file(s). If omitted, reads from stdin.
@@ -33,6 +33,9 @@ options:
   -F, --format {log,json,csv}
                         Input format to parse (default: log)
   -s, --sound           Enable sound playback (off by default)
+  -A, --analyze         Print full code analysis and exit
+  -L, --log-level {FINE,INFO,LOG,ERROR}
+                        Set minimum log level (default: INFO)
 
 Use -F log for console output or -F json for structured logging.
 ```

@@ -14,8 +14,10 @@ from datetime import datetime, timedelta, date
 
 EXPECTED_BIT_LENGTH = 25
 EXPECTED_HEX_LENGTH = (EXPECTED_BIT_LENGTH + 3) // 4  # 7 hex characters
-KNOWN_MASK = 0x1FFFFF
-KNOWN_ID   = 0x7AFAA8
+KNOWN_MASK          = 0x1FFFFF
+KNOWN_ID            = 0x7AFAA8
+IDLE_TIMEOUT        = 5
+IDLE_TIMEOUT_MAX    = 10*60
 
 # Known channel ids
 KNOWN_IDS_FILE = "known_ids.json"
@@ -333,7 +335,9 @@ def process_input_line(line, last_input_time):
 
 # Logging functions
 LOG_FILE = "log.txt"
+LOG_LEVELS = ["FINE", "INFO", "LOG" ,"ERROR"]
 log_file = None
+log_level = "INFO"
 log_format = "log"
 log_formats=["log", "json", "csv"]
 
@@ -349,6 +353,9 @@ def open_log():
 
     log_file = open(log_path, "a", encoding="utf-8")
 
+def fine(message, **kwargs):
+    log(message, level="FINE", **kwargs)
+
 def info(message, **kwargs):
     log(message, level="INFO", **kwargs)
 
@@ -361,7 +368,10 @@ def panic(message, **kwargs):
     sys.exit(-1)
 
 def log(message, level="LOG", **kwargs):
-    global log_file
+    global log_file, log_level
+
+    if LOG_LEVELS.index(level) < LOG_LEVELS.index(log_level):
+        return
 
     raw = kwargs.get("raw","")
     error = kwargs.get("error","")
@@ -376,7 +386,7 @@ def log(message, level="LOG", **kwargs):
             line = f"{line}: {trace}"
 
     if log_format == "log":
-        if level == "LOG" or level == "INFO":
+        if level in ["LOG","INFO","FINE"]:
             print(line, flush=True)
         else:
             print(line, file=sys.stderr, flush=True)
@@ -439,69 +449,25 @@ def close_log():
     except Exception:
         pass
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="FoxPing - 433 MHz Bait Alert System",
-        epilog="Use -F log for console output or -F json for structured logging."
-    )
-    parser.add_argument("-F", "--format", choices=log_formats, default="log", help="Input format to parse (default: log)")
-    parser.add_argument("-s", "--sound", action="store_true", help="Enable sound playback (off by default)")
-    parser.add_argument("-A", "--analyze", action="store_true", help="Print full code analysis and exit")
-    parser.add_argument("files", nargs="*", help="Optional input file(s). If omitted, reads from stdin.")
-
-    return parser.parse_args()
-
-def main():
-    global log_format, log_file, known_ids, learned_codes, suspicious_codes, unknown_codes, last_known_ids_mtime, play_sound_enabled
-
-    open_log()
-
-    known_ids = load_known_ids()
-    learned_codes = load_learned()
-    suspicious_codes = load_suspicious()
-    unknown_codes = load_unknown()
-    last_input_time = time.time()
-
-    args = parse_args()
-    if args.analyze:
-        show_analysis()
-        return
-
-    play_sound_enabled = args.sound
-    if args.format not in log_formats:
-        warn(f"Unsupported format: {args.format}, defaulting to 'log'")
-        log_format = "log"
+def human_time_since(seconds):
+    seconds = int(seconds)
+    if seconds < 1:
+        return "now"
+    elif seconds == 1:
+        return "1 second"
+    elif seconds < 60:
+        return f"{seconds} seconds"
+    elif seconds < 3600:
+        minutes = seconds // 60
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
     else:
-        log_format = args.format
-
-    if args.files:
-        for filename in args.files:
-            try:
-                with open(filename) as f:
-                    for line in f:
-                        last_input_time = process_input_line(line, last_input_time)
-            except Exception as e:
-                warn(f"Failed to read {filename}", error=str(e))
-    else:
-        info("====================================================")
-        info("[INFO] Foxping started. Press Ctrl+C to exit.")
-        info("====================================================")
-
-        if os.name != "nt":
-            import select
-            stdin_fd = sys.stdin.fileno()
-            while True:
-                rlist, _, _ = select.select([stdin_fd], [], [], 5)
-                if rlist:
-                    line = sys.stdin.readline()
-                    if not line:
-                        break
-                    last_input_time = process_input_line(line, last_input_time)
-                else:
-                    info("[INFO] Waiting for input from rtl_433...")
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        if minutes == 0:
+            return f"{hours} hour{'s' if hours != 1 else ''}"
         else:
-            for line in sys.stdin:
-                last_input_time = process_input_line(line, last_input_time)
+            return f"{hours} hour{'s' if hours != 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''}"
+
 
 def show_estimated_ids():
     print("=== Estimated IDs (based on fixed offsets) ===")
@@ -575,6 +541,87 @@ def show_analysis():
 
         print(f"{expected_channel:<8}\t{code_hex:<10}\t{known_code:<10}\t{hamming:<4}")
     print()
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="FoxPing - 433_rtl based Bait Alert Tracking Service",
+        epilog="Use -F log for console output or -F json for structured logging."
+    )
+    parser.add_argument("-F", "--format", choices=log_formats, default="log", help="Input format to parse (default: log)")
+    parser.add_argument("-s", "--sound", action="store_true", help="Enable sound playback (off by default)")
+    parser.add_argument("-A", "--analyze", action="store_true", help="Print full code analysis and exit")
+    parser.add_argument("-L", "--log-level", choices=LOG_LEVELS, default="INFO", help="Set minimum log level (default: INFO)")
+    parser.add_argument("files", nargs="*", help="Optional input file(s). If omitted, reads from stdin.")
+
+    return parser.parse_args()
+
+def main():
+    global log_format, log_level, log_file, known_ids, learned_codes, suspicious_codes, unknown_codes, last_known_ids_mtime, play_sound_enabled
+
+    open_log()
+
+    args = parse_args()
+    log_level = args.log_level
+    known_ids = load_known_ids()
+    learned_codes = load_learned()
+    suspicious_codes = load_suspicious()
+    unknown_codes = load_unknown()
+    last_input_time = time.time()
+
+    if args.analyze:
+        show_analysis()
+        return
+
+    play_sound_enabled = args.sound
+    if args.format not in log_formats:
+        warn(f"Unsupported format: {args.format}, defaulting to 'log'")
+        log_format = "log"
+    else:
+        log_format = args.format
+
+    if args.files:
+        for filename in args.files:
+            try:
+                with open(filename) as f:
+                    for line in f:
+                        last_input_time = process_input_line(line, last_input_time)
+            except Exception as e:
+                warn(f"Failed to read {filename}", error=str(e))
+    else:
+        info("====================================================")
+        info("[INFO] Foxping started. Press Ctrl+C to exit.")
+        info("====================================================")
+
+        if os.name != "nt":
+            import select
+            timeout = IDLE_TIMEOUT
+            in_timeout = True
+            stdin_fd = sys.stdin.fileno()
+            last_line_time = datetime.now()
+            while True:
+                rlist, _, _ = select.select([stdin_fd], [], [], timeout)
+                if rlist:
+                    now = datetime.now()
+                    line = sys.stdin.readline()
+                    if not line:
+                        break
+                    if(in_timeout):
+                        in_timeout = False
+                        elapsed = (now - last_line_time).total_seconds()
+                        fine(f"[STDIN] Received {len(line)} characters ({human_time_since(elapsed)})")
+
+                    last_line_time = now
+                    last_input_time = process_input_line(line, last_input_time)
+                    timeout = IDLE_TIMEOUT
+                else:
+                    in_timeout = True
+                    now = datetime.now()
+                    elapsed = (now - last_line_time).total_seconds()
+                    fine(f"[STDIN] Waiting for input... ({human_time_since(elapsed)})")
+                    timeout = min(timeout + IDLE_TIMEOUT, IDLE_TIMEOUT_MAX)
+        else:
+            for line in sys.stdin:
+                last_input_time = process_input_line(line, last_input_time)
 
 if __name__ == "__main__":
     try:
