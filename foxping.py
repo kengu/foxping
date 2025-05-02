@@ -520,6 +520,9 @@ ANALYSIS_TYPES = ["A","K","L","S","U","E"]
 def show_analysis():
     all = analyze == "A"
     if all or analyze == "K":
+        if(log_format == "json"):
+            print(json.dumps(detections), flush=True)
+            return
         print("=== Known IDs ===")
         print(f"{'Code':<10} {'Channel':<8} {'Count':<6} {'First seen':<36} {'Last seen':<36}")
         print("-" * (10+8+6+2*36+4))
@@ -550,6 +553,9 @@ def show_analysis():
         print()
 
     if all or analyze == "L":
+        if(log_format == "json"):
+            print(json.dumps(learned_codes), flush=True)
+            return
         print("=== Learned Codes ===")
         for code, entry in learned_codes.items():
             count = entry.get("count", "?")
@@ -560,6 +566,9 @@ def show_analysis():
         print()
 
     if all or analyze == "S":
+        if(log_format == "json"):
+            print(json.dumps(suspicious_codes), flush=True)
+            return
         print("=== Suspicious Codes Grouped by Known Code ===")
         for known_code, entry in suspicious_codes.items():
             channel = known_ids.get(known_code, "?")
@@ -578,6 +587,9 @@ def show_analysis():
         print()
 
     if all or analyze == "U":
+        if(log_format == "json"):
+            print(json.dumps(unknown_codes), flush=True)
+            return
         print("=== Unknown Codes ===")
         for code, entry in unknown_codes.items():
             count = entry.get("count", "?")
@@ -619,7 +631,7 @@ def parse_args():
     )
     parser.add_argument("-F", "--format", choices=log_formats, default="log", help="Input format to parse (default: log)")
     parser.add_argument("-s", "--sound", action="store_true", help="Enable sound playback (off by default)")
-    parser.add_argument("-A", "--analyze", choices=ANALYSIS_TYPES, default="", help="Print code analysis and exit (default is K for known codes)")
+    parser.add_argument("-A", "--analyze", choices=ANALYSIS_TYPES, default="", help="Print code analysis and exit (default is K for known codes). Support -F json for K,L,S and U.")
     parser.add_argument("-L", "--log-level", choices=LOG_LEVELS, default="INFO", help="Set minimum log level (default: INFO)")
     parser.add_argument("files", nargs="*", help="Optional input file(s). If omitted, reads from stdin.")
 
@@ -633,6 +645,9 @@ def main():
     args = parse_args()
     analyze = args.analyze
     log_level = args.log_level
+    log_format = args.format
+    play_sound_enabled = args.sound
+
     known_ids = load_known_ids()
     detections = load_detections()
     learned_codes = load_learned()
@@ -643,13 +658,6 @@ def main():
     if analyze:
         show_analysis()
         return
-
-    play_sound_enabled = args.sound
-    if args.format not in log_formats:
-        warn(f"Unsupported format: {args.format}, defaulting to 'log'")
-        log_format = "log"
-    else:
-        log_format = args.format
 
     if args.files:
         for filename in args.files:

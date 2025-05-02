@@ -34,7 +34,7 @@ options:
                         Input format to parse (default: log)
   -s, --sound           Enable sound playback (off by default)
   -A, --analyze {K,L,S,U,E}
-                        Print code analysis and exit (default is K for known codes)
+                        Print code analysis and exit (default is K for known codes). Support -F json for K,L,S and U.
   -L, --log-level {FINE,INFO,LOG,ERROR}
                         Set minimum log level (default: INFO)
 
@@ -60,10 +60,13 @@ python3 foxping.py --analyze
 
 This will show something similar to this after running some time
 ```bash
+python3 foxping.py --analyze A
 === Known IDs ===
-bfafaa8 → CH13
-efafaa8 → CH14
-fbafaa8 → CH15
+Code       Channel  Count  First seen                           Last seen                           
+----------------------------------------------------------------------------------------------------
+bfafaa8    CH13     1      2025-05-01 22:15:00 (21 hours and 40 minutes ago) never                               
+efafaa8    CH14     1      2025-05-01 22:15:00 (21 hours and 40 minutes ago) never                               
+fbafaa8    CH15     1      2025-05-01 22:15:00 (21 hours and 40 minutes ago) never                               
 
 === Learned Codes ===
 05afaa8 (estimated=CH03?, count=3, first_seen=2025-05-01 22:15:00)
@@ -79,24 +82,24 @@ cfafaa9 (count=1, first_seen=2025-05-01 22:15:01, estimated=CH16?)
 
 === Estimated IDs (based on fixed offsets) ===
 
-Channel         Estimate        Known           Hamming   
--------------------------------------------------------
-CH01            07afaa8         -               -   
-CH02            06afaa8         -               -   
-CH03            05afaa8         -               -   
-CH04            04afaa8         -               -   
-CH05            03afaa8         -               -   
-CH06            02afaa8         -               -   
-CH07            01afaa8         -               -   
-CH08            00afaa8         -               -   
-CH09            0fafaa8         -               -   
-CH10            0eafaa8         -               -   
-CH11            0dafaa8         -               -   
-CH12            0cafaa8         -               -   
-CH13            0bafaa8         bfafaa8         2   
-CH14            0aafaa8         efafaa8         3   
-CH15            09afaa8         fbafaa8         3   
-CH16            08afaa8         -               -   
+Channel  Estimate   Known      Hamming   
+--------------------------------------
+CH01     07afaa8    -          -         
+CH02     06afaa8    -          -         
+CH03     05afaa8    -          -         
+CH04     04afaa8    -          -         
+CH05     03afaa8    -          -         
+CH06     02afaa8    -          -         
+CH07     01afaa8    -          -         
+CH08     00afaa8    -          -         
+CH09     0fafaa8    -          -         
+CH10     0eafaa8    -          -         
+CH11     0dafaa8    -          -         
+CH12     0cafaa8    -          -         
+CH13     0bafaa8    bfafaa8    2         
+CH14     0aafaa8    efafaa8    3         
+CH15     09afaa8    fbafaa8    3         
+CH16     08afaa8    -          -         
 ```
 
 ## ⚙️ Setup
